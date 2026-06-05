@@ -7,9 +7,11 @@ from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TPE1, TIT2
 
 # ================= НАСТРОЙКИ БОТА =================
-# Берем токен из панели управления Bothost
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL_ID = -1003367271983  # ID твоего канала
+CHANNEL_ID = -1003367271983  # ID твоих каналов
+
+# Твой цифровой ID Telegram (вставь сюда число, которое получишь из @userinfobot)
+ADMIN_ID = 8016366287  
 
 SEARCH_QUERIES = [
     "новинки поп музыки 2026",
@@ -29,6 +31,16 @@ if not BOT_TOKEN:
 bot = telebot.TeleBot(BOT_TOKEN)
 processed_tracks = set()
 is_first_run = True
+
+def send_admin_log(text):
+    """Отправка сервисных логов напрямую в личку админу"""
+    print(text)  # Дублируем в консоль хостинга
+    if ADMIN_ID == 123456789:
+        return  # Не отправляем, если ID остался стандартным
+    try:
+        bot.send_message(ADMIN_ID, f"🤖 *Лог работы:* {text}", parse_mode="Markdown")
+    except Exception as e:
+        print(f"[Ошибка отправки лога админу]: {e}")
 
 def get_soundcloud_opts(is_search=True, track_id=None):
     """Конфигурация yt-dlp для стабильного скачивания с SoundCloud"""
@@ -65,9 +77,9 @@ def modify_metadata(file_path, track_title):
         audio.tags.add(TPE1(encoding=3, text='@VavixMuz'))
         audio.tags.add(TIT2(encoding=3, text=track_title))
         audio.save()
-        print(f"[Теги] Успешно обновлены для: {track_title}")
+        send_admin_log(f"🏷️ Теги обновились для трека: {track_title}")
     except Exception as e:
-        print(f"[Теги] Не удалось изменить метаданные: {e}")
+        send_admin_log(f"⚠️ Ошибка изменения метаданных: {e}")
 
 def parse_and_upload():
     global is_first_run
@@ -79,16 +91,13 @@ def parse_and_upload():
         for query in SEARCH_QUERIES:
             try:
                 time.sleep(random.randint(3, 7))
-                print(f"[Поиск] Ищем в SoundCloud: '{query}'")
                 search_result = ydl.extract_info(f"scsearch10:{query}", download=False)
-                
                 if 'entries' in search_result:
                     found_entries.extend(search_result['entries'])
             except Exception as e:
                 print(f"[Поиск] Ошибка при обработке запроса '{query}': {e}")
 
     if not found_entries:
-        print("[Парсер] Новых треков на SoundCloud не обнаружено.")
         return
 
     if is_first_run:
@@ -96,7 +105,7 @@ def parse_and_upload():
             if entry and 'id' in entry:
                 processed_tracks.add(entry['id'])
         is_first_run = False
-        print(f"[Старт] База данных инициализирована. В кэше: {len(processed_tracks)} треков.")
+        send_admin_log(f"✅ База данных успешно инициализирована при старте. В кэше `{len(processed_tracks)}` треков. Начинаю дежурство!")
         return
 
     for entry in found_entries:
@@ -113,7 +122,7 @@ def parse_and_upload():
                 processed_tracks.add(track_id)
                 continue
 
-            print(f"[Новинка] Найдено в SoundCloud: {track_title}. Скачиваю прямой MP3...")
+            send_admin_log(f"🔥 Найдена новинка в SoundCloud! Начинаю скачивание:\n*{track_title}*")
             download_opts = get_soundcloud_opts(is_search=False, track_id=track_id)
             
             try:
@@ -132,28 +141,27 @@ def parse_and_upload():
                             caption="🎶 *Новинка из трендов SoundCloud!*\n\nПодписывайся на @VavixMuz",
                             parse_mode="Markdown"
                         )
-                    print(f"[Телеграм] Трек '{track_title}' успешно опубликован!")
+                    send_admin_log(f"🚀 Успех! Трек пущен в эфир канала: *{track_title}*")
                     os.remove(expected_file)
                 
                 processed_tracks.add(track_id)
                 time.sleep(5)
                 
             except Exception as err:
-                print(f"[Ошибка] Не удалось скачать или отправить трек {track_id}: {err}")
+                send_admin_log(f"❌ Ошибка при скачивании/отправке трека {track_id}: {err}")
                 processed_tracks.add(track_id)
 
 if __name__ == '__main__':
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
         
-    print("[Запуск] Бот VavixMuz успешно стартовал на Bothost!")
+    # Сигнал о включении сервера
+    send_admin_log("🚀 *Бот VavixMuz успешно запущен на хостинге Bothost!* Запускаю первый цикл...")
     
-    # Прямой бесконечный цикл без лишних потоков
     while True:
         try:
             parse_and_upload()
         except Exception as e:
-            print(f"[Критическая ошибка главного цикла]: {e}")
+            send_admin_log(f"🚨 КРИТИЧЕСКАЯ ОШИБКА ЦИКЛА: {e}")
         
-        print(f"[Ожидание] Следующая проверка через {CHECK_INTERVAL} секунд...")
         time.sleep(CHECK_INTERVAL)
