@@ -6,11 +6,21 @@ import yt_dlp
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, TPE1, TIT2
 
+# ================= АВТО-УСТАНОВКА FFMPEG =================
+try:
+    import static_ffmpeg
+    print("[Система] Активация встроенного FFmpeg...")
+    static_ffmpeg.add_paths()  # Автоматически скачивает и прописывает ffmpeg/ffprobe в PATH
+    print("[Система] FFmpeg и FFprobe успешно подключены!")
+except Exception as e:
+    print(f"[Предупреждение] Не удалось запустить локальный static-ffmpeg: {e}")
+# =========================================================
+
 # ================= НАСТРОЙКИ БОТА =================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHANNEL_ID = -1003367271983  # ID твоих каналов
+CHANNEL_ID = -1003367271983  # ID твоего канала
 
-# Твой цифровой ID Telegram (вставь сюда число, которое получишь из @userinfobot)
+# Твой цифровой ID Telegram для получения отчетов в личку
 ADMIN_ID = 8016366287  
 
 SEARCH_QUERIES = [
@@ -34,9 +44,9 @@ is_first_run = True
 
 def send_admin_log(text):
     """Отправка сервисных логов напрямую в личку админу"""
-    print(text)  # Дублируем в консоль хостинга
+    print(text)
     if ADMIN_ID == 123456789:
-        return  # Не отправляем, если ID остался стандартным
+        return
     try:
         bot.send_message(ADMIN_ID, f"🤖 *Лог работы:* {text}", parse_mode="Markdown")
     except Exception as e:
@@ -155,7 +165,6 @@ if __name__ == '__main__':
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
         
-    # Сигнал о включении сервера
     send_admin_log("🚀 *Бот VavixMuz успешно запущен на хостинге Bothost!* Запускаю первый цикл...")
     
     while True:
