@@ -10,7 +10,7 @@ from mutagen.id3 import ID3, TPE1, TIT2
 try:
     import static_ffmpeg
     print("[Система] Активация встроенного FFmpeg...")
-    static_ffmpeg.add_paths()  # Автоматически скачивает и прописывает ffmpeg/ffprobe в PATH
+    static_ffmpeg.add_paths()
     print("[Система] FFmpeg и FFprobe успешно подключены!")
 except Exception as e:
     print(f"[Предупреждение] Не удалось запустить локальный static-ffmpeg: {e}")
@@ -20,21 +20,8 @@ except Exception as e:
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHANNEL_ID = -1003367271983  # ID твоего канала
 
-# Твой цифровой ID Telegram для получения отчетов в личку
+# Твой актуальный Admin ID
 ADMIN_ID = 8016366287  
-
-SEARCH_QUERIES = [
-    "новинки поп музыки 2026",
-    "премьера трека поп 2026",
-    "русский поп 2026 хиты",
-    "new pop hits 2026",
-    "top pop songs 2026",
-    "русский поп хиты",
-    "премьера трека поп ",
-    "русский поп хиты",
-    "new pop hits",
-    "top pop songs"
-]
 
 CHECK_INTERVAL = 1800  # Проверка обновлений каждые 30 минут
 # ==================================================
@@ -57,11 +44,55 @@ def send_admin_log(text):
     except Exception as e:
         print(f"[Ошибка отправки лога админу]: {e}")
 
+def get_dynamic_queries():
+    """Глубоко анализирует весь канал и подбирает случайных артистов из истории"""
+    base_queries = [
+        "avora remix", "vonamour remix", "deep house russian 2026",
+        "santiz стиль", "bakr стиль ремикс", "speed up русский поп",
+        "Miagi", "opium", "кавказские песни 2026"
+    ]
+    
+    try:
+        # Увеличили лимит до 150 сообщений для полного изучения музыкального профиля канала
+        history = bot.get_chat_history(CHANNEL_ID, limit=150)
+        found_artists = set()
+        
+        for msg in history:
+            if msg.audio and msg.audio.performer:
+                artist = msg.audio.performer.strip()
+                # Фильтруем вотермарки и ссылки
+                if "@" not in artist and "vavix" not in artist.lower():
+                    # Корректно вырезаем имя главного артиста (до фитов и запятых)
+                    clean_artist = artist.split(',')[0].split('&')[0].split('feat')[0].split('Feat')[0].strip()
+                    if len(clean_artist) > 2:
+                        found_artists.add(clean_artist)
+                        
+        if found_artists:
+            all_artists = list(found_artists)
+            # Выбираем 5 абсолютно СЛУЧАЙНЫХ артистов из всей истории канала, чтобы разнообразить поиск
+            sampled_artists = random.sample(all_artists, min(5, len(all_artists)))
+            
+            send_admin_log(f"🧠 *Анализ архива:* Всего в канале изучено артистов: `{len(all_artists)}`.\n🎯 Для текущего цикла выбраны: `{', '.join(sampled_artists)}`")
+            
+            dynamic_queries = []
+            for artist in sampled_artists:
+                dynamic_queries.append(f"{artist} remix")
+                dynamic_queries.append(f"{artist} deep house")
+                dynamic_queries.append(f"{artist} speed up")
+            
+            # Смешиваем со стандартными трендами для стабильности результатов
+            return list(set(dynamic_queries + base_queries))
+            
+    except Exception as e:
+        print(f"[Глубокий поиск] Ошибка при чтении истории канала: {e}")
+        
+    return base_queries
+
 def get_soundcloud_opts(is_search=True, track_id=None):
     """Конфигурация yt-dlp для стабильного скачивания с SoundCloud"""
     opts = {
         'quiet': True,
-        'format': 'http_mp3_128/bestaudio/best',  # Только прямой MP3 поток
+        'format': 'http_mp3_128/bestaudio/best',
         'socket_timeout': 15,
         'retries': 3,
         'http_headers': {
@@ -92,21 +123,28 @@ def modify_metadata(file_path, track_title):
         audio.tags.add(TPE1(encoding=3, text='@VavixMuz'))
         audio.tags.add(TIT2(encoding=3, text=track_title))
         audio.save()
-        send_admin_log(f"🏷️ Теги обновились для трека: {track_title}")
+        print(f"[Теги] Успешно прописан вотермарк в: {track_title}")
     except Exception as e:
-        send_admin_log(f"⚠️ Ошибка изменения метаданных: {e}")
+        print(f"[Теги] Ошибка изменения метаданных: {e}")
 
 def parse_and_upload():
     global is_first_run
     print("[Парсер] Запуск сканирования SoundCloud...")
+    
+    # Генерируем динамические запросы на основе всей истории канала
+    current_queries = get_dynamic_queries()
+    
     found_entries = []
     search_opts = get_soundcloud_opts(is_search=True)
     
     with yt_dlp.YoutubeDL(search_opts) as ydl:
-        for query in SEARCH_QUERIES:
+        # Случайно берем 5 запросов из пула, чтобы не перегружать сервер
+        queries_to_run = random.sample(current_queries, min(5, len(current_queries)))
+        
+        for query in queries_to_run:
             try:
-                time.sleep(random.randint(3, 7))
-                search_result = ydl.extract_info(f"scsearch10:{query}", download=False)
+                time.sleep(random.randint(3, 6))
+                search_result = ydl.extract_info(f"scsearch4:{query}", download=False)
                 if 'entries' in search_result:
                     found_entries.extend(search_result['entries'])
             except Exception as e:
@@ -120,7 +158,7 @@ def parse_and_upload():
             if entry and 'id' in entry:
                 processed_tracks.add(entry['id'])
         is_first_run = False
-        send_admin_log(f"✅ База данных успешно инициализирована при старте. В кэше `{len(processed_tracks)}` треков. Начинаю дежурство!")
+        send_admin_log(f"✅ Интеллектуальный радар откалиброван по всей истории канала. Начинаю поиск похожих новинок!")
         return
 
     for entry in found_entries:
@@ -128,16 +166,17 @@ def parse_and_upload():
             continue
             
         track_id = entry['id']
-        track_title = entry.get('title', 'Поп новинка')
+        track_title = entry.get('title', 'Музыкальная новинка')
         track_url = entry.get('url') or f"https://soundcloud.com/{track_id}"
         duration = entry.get('duration')
 
         if track_id not in processed_tracks:
+            # Отсекаем слишком короткие звуки и длинные миксы
             if duration and (duration < 90 or duration > 390):
                 processed_tracks.add(track_id)
                 continue
 
-            send_admin_log(f"🔥 Найдена новинка в SoundCloud! Начинаю скачивание:\n*{track_title}*")
+            send_admin_log(f"🔥 Найдена похожая музыка по истории канала! Скачиваю:\n*{track_title}*")
             download_opts = get_soundcloud_opts(is_search=False, track_id=track_id)
             
             try:
@@ -153,24 +192,24 @@ def parse_and_upload():
                         bot.send_audio(
                             chat_id=CHANNEL_ID,
                             audio=audio_bytes,
-                            caption="🎶 *Новинка из трендов SoundCloud!*\n\nПодписывайся на @VavixMuz",
+                            caption="🎶 *Новинка под стиль канала!*\n\nПодписывайся на @VavixMuz",
                             parse_mode="Markdown"
                         )
-                    send_admin_log(f"🚀 Успех! Трек пущен в эфир канала: *{track_title}*")
+                    send_admin_log(f"🚀 Трек успешно улетел в эфир: *{track_title}*")
                     os.remove(expected_file)
                 
                 processed_tracks.add(track_id)
                 time.sleep(5)
                 
             except Exception as err:
-                send_admin_log(f"❌ Ошибка при скачивании/отправке трека {track_id}: {err}")
+                send_admin_log(f"❌ Не удалось обработать трек {track_id}: {err}")
                 processed_tracks.add(track_id)
 
 if __name__ == '__main__':
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
         
-    send_admin_log("🚀 *Бот VavixMuz успешно запущен на хостинге Bothost!* Запускаю первый цикл...")
+    send_admin_log("🚀 *Бот VavixMuz успешно запущен!* Включен режим глубокого изучения всей истории канала.")
     
     while True:
         try:
