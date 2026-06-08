@@ -49,7 +49,8 @@ def get_dynamic_queries():
     base_queries = [
         "avora remix", "vonamour remix", "deep house russian 2026",
         "santiz стиль", "bakr стиль ремикс", "speed up русский поп",
-        "Miagi", "opium", "кавказские песни 2026"
+        "Miagi", "opium", "кавказские песни 2026", "рок 2026", 
+        "хип-хоп 2026",
     ]
     
     try:
