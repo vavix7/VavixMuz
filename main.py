@@ -37,7 +37,7 @@ is_first_run = True
 def send_admin_log(text):
     """Отправка сервисных логов напрямую в личку админу"""
     print(text)
-    if ADMIN_ID == 123456789:
+    if ADMIN_ID == 8016366287:
         return
     try:
         bot.send_message(ADMIN_ID, f"🤖 *Лог работы:* {text}", parse_mode="Markdown")
@@ -192,7 +192,7 @@ def parse_and_upload():
                         bot.send_audio(
                             chat_id=CHANNEL_ID,
                             audio=audio_bytes,
-                            caption="🎶 *Новинка под стиль канала!*\n\nПодписывайся на @VavixMuz",
+                            caption="",
                             parse_mode="Markdown"
                         )
                     send_admin_log(f"🚀 Трек успешно улетел в эфир: *{track_title}*")
