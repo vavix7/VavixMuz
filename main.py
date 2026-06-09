@@ -23,7 +23,10 @@ CHANNEL_ID = -1003367271983  # ID твоего канала
 # Твой актуальный Admin ID
 ADMIN_ID = 8016366287  
 
-CHECK_INTERVAL = 1800  # Проверка обновлений каждые 30 минут
+CHECK_INTERVAL = 1800  # Проверка обновлений каждые 30 минут (1800 секунд)
+
+# АНТИ-СПАМ: Сколько максимум треков бот может выложить за ОДИН цикл проверки
+MAX_POSTS_PER_CYCLE = 2  
 # ==================================================
 
 if not BOT_TOKEN:
@@ -37,7 +40,7 @@ is_first_run = True
 def send_admin_log(text):
     """Отправка сервисных логов напрямую в личку админу"""
     print(text)
-    if ADMIN_ID == 8016366287:
+    if ADMIN_ID == 123456789:  # Заглушка изменена, чтобы не блокировать твой реальный ID
         return
     try:
         bot.send_message(ADMIN_ID, f"🤖 *Лог работы:* {text}", parse_mode="Markdown")
@@ -54,23 +57,19 @@ def get_dynamic_queries():
     ]
     
     try:
-        # Увеличили лимит до 150 сообщений для полного изучения музыкального профиля канала
         history = bot.get_chat_history(CHANNEL_ID, limit=150)
         found_artists = set()
         
         for msg in history:
             if msg.audio and msg.audio.performer:
                 artist = msg.audio.performer.strip()
-                # Фильтруем вотермарки и ссылки
                 if "@" not in artist and "vavix" not in artist.lower():
-                    # Корректно вырезаем имя главного артиста (до фитов и запятых)
                     clean_artist = artist.split(',')[0].split('&')[0].split('feat')[0].split('Feat')[0].strip()
                     if len(clean_artist) > 2:
                         found_artists.add(clean_artist)
                         
         if found_artists:
             all_artists = list(found_artists)
-            # Выбираем 5 абсолютно СЛУЧАЙНЫХ артистов из всей истории канала, чтобы разнообразить поиск
             sampled_artists = random.sample(all_artists, min(5, len(all_artists)))
             
             send_admin_log(f"🧠 *Анализ архива:* Всего в канале изучено артистов: `{len(all_artists)}`.\n🎯 Для текущего цикла выбраны: `{', '.join(sampled_artists)}`")
@@ -81,7 +80,6 @@ def get_dynamic_queries():
                 dynamic_queries.append(f"{artist} deep house")
                 dynamic_queries.append(f"{artist} speed up")
             
-            # Смешиваем со стандартными трендами для стабильности результатов
             return list(set(dynamic_queries + base_queries))
             
     except Exception as e:
@@ -132,14 +130,25 @@ def parse_and_upload():
     global is_first_run
     print("[Парсер] Запуск сканирования SoundCloud...")
     
-    # Генерируем динамические запросы на основе всей истории канала
     current_queries = get_dynamic_queries()
     
+    # Свежее сканирование названий треков, которые УЖЕ есть в канале (Защита от дублей)
+    existing_titles = set()
+    try:
+        channel_history = bot.get_chat_history(CHANNEL_ID, limit=150)
+        for msg in channel_history:
+            if msg.audio and msg.audio.title:
+                # Очищаем название от пробелов и знаков, делая строчной строку для точного сравнения
+                clean_title = "".join(c for c in msg.audio.title.lower() if c.isalnum())
+                if clean_title:
+                    existing_titles.add(clean_title)
+    except Exception as e:
+        print(f"[Анти-дубль] Не удалось прочесть историю канала: {e}")
+
     found_entries = []
     search_opts = get_soundcloud_opts(is_search=True)
     
     with yt_dlp.YoutubeDL(search_opts) as ydl:
-        # Случайно берем 5 запросов из пула, чтобы не перегружать сервер
         queries_to_run = random.sample(current_queries, min(5, len(current_queries)))
         
         for query in queries_to_run:
@@ -159,58 +168,75 @@ def parse_and_upload():
             if entry and 'id' in entry:
                 processed_tracks.add(entry['id'])
         is_first_run = False
-        send_admin_log(f"✅ Интеллектуальный радар откалиброван по всей истории канала. Начинаю поиск похожих новинок!")
+        send_admin_log(f"✅ Интеллектуальный радар откалиброван. Защита от дубликатов включена. Начинаю дежурство!")
         return
 
+    posts_count = 0  # Счетчик постов за текущий цикл
+
     for entry in found_entries:
-        if not entry:
-            continue
+        if not entry or posts_count >= MAX_POSTS_PER_CYCLE:
+            break
             
         track_id = entry['id']
         track_title = entry.get('title', 'Музыкальная новинка')
         track_url = entry.get('url') or f"https://soundcloud.com/{track_id}"
         duration = entry.get('duration')
 
-        if track_id not in processed_tracks:
-            # Отсекаем слишком короткие звуки и длинные миксы
-            if duration and (duration < 90 or duration > 390):
-                processed_tracks.add(track_id)
-                continue
+        # Очищаем название найденного трека для проверки на дубликат
+        clean_track_title = "".join(c for c in track_title.lower() if c.isalnum())
 
-            send_admin_log(f"🔥 Найдена похожая музыка по истории канала! Скачиваю:\n*{track_title}*")
-            download_opts = get_soundcloud_opts(is_search=False, track_id=track_id)
+        # Проверка 1: Нет ли ID в кэше сессии?
+        if track_id in processed_tracks:
+            continue
+
+        # Проверка 2: Нет ли трека с таким же названием в истории канала?
+        if clean_track_title in existing_titles:
+            processed_tracks.add(track_id)  # Запоминаем, чтобы не тратить ресурсы в этой сессии
+            continue
+
+        if duration and (duration < 90 or duration > 390):
+            processed_tracks.add(track_id)
+            continue
+
+        send_admin_log(f"🔥 Найдена новинка! Скачиваю:\n*{track_title}*")
+        download_opts = get_soundcloud_opts(is_search=False, track_id=track_id)
+        
+        try:
+            with yt_dlp.YoutubeDL(download_opts) as dl_ydl:
+                dl_ydl.download([track_url])
             
-            try:
-                with yt_dlp.YoutubeDL(download_opts) as dl_ydl:
-                    dl_ydl.download([track_url])
+            expected_file = f"downloads/{track_id}.mp3"
+            
+            if os.path.exists(expected_file):
+                modify_metadata(expected_file, track_title)
                 
-                expected_file = f"downloads/{track_id}.mp3"
+                with open(expected_file, 'rb') as audio_bytes:
+                    bot.send_audio(
+                        chat_id=CHANNEL_ID,
+                        audio=audio_bytes,
+                        caption="",
+                        parse_mode="Markdown"
+                    )
+                send_admin_log(f"🚀 %D0%A2%D1%80%D0%B5%D0%BA успешно улетел в эфир: *{track_title}*")
+                os.remove(expected_file)
                 
-                if os.path.exists(expected_file):
-                    modify_metadata(expected_file, track_title)
-                    
-                    with open(expected_file, 'rb') as audio_bytes:
-                        bot.send_audio(
-                            chat_id=CHANNEL_ID,
-                            audio=audio_bytes,
-                            caption="",
-                            parse_mode="Markdown"
-                        )
-                    send_admin_log(f"🚀 Трек успешно улетел в эфир: *{track_title}*")
-                    os.remove(expected_file)
-                
-                processed_tracks.add(track_id)
-                time.sleep(5)
-                
-            except Exception as err:
-                send_admin_log(f"❌ Не удалось обработать трек {track_id}: {err}")
-                processed_tracks.add(track_id)
+                posts_count += 1  # Увеличиваем счетчик отправленных постов
+            
+            processed_tracks.add(track_id)
+            time.sleep(5)
+            
+        except Exception as err:
+            send_admin_log(f"❌ Не удалось обработать трек {track_id}: {err}")
+            processed_tracks.add(track_id)
+
+    if posts_count > 0:
+        send_admin_log(f"⏳ Цикл завершен. Опубликовано треков: `{posts_count}` из максимальных `{MAX_POSTS_PER_CYCLE}`. Отдыхаю.")
 
 if __name__ == '__main__':
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
         
-    send_admin_log("🚀 *Бот VavixMuz успешно запущен!* Включен режим глубокого изучения всей истории канала.")
+    send_admin_log("🚀 *Бот VavixMuz успешно перезапущен!* Активирован жесткий анти-спам фильтр дубликатов.")
     
     while True:
         try:
