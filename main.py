@@ -50,10 +50,8 @@ def send_admin_log(text):
 def get_dynamic_queries():
     """Глубоко анализирует весь канал и подбирает случайных артистов из истории"""
     base_queries = [
-        "avora remix", "vonamour remix", "deep house russian 2026",
-        "santiz стиль", "bakr стиль ремикс", "speed up русский поп",
-        "Miagi", "opium", "кавказские песни 2026", "рок 2026", 
-        "хип-хоп 2026",
+        "avora remix", "vonamour remix",
+        "santiz стиль", "bakr стиль ремикс",
     ]
     
     try:
